@@ -638,6 +638,92 @@ app.get("/favicon.png", (req, res) => {
   res.sendFile(path.join(__dirname, "favicon.png"), { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" } });
 });
 
+app.get("/sitemap-index.xml", async (req, res) => {
+  const mirrorOrigin = getMirrorOrigin(req);
+  const cacheKey = "custom:sitemap-index.xml";
+
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    res.set("Content-Type", "application/xml; charset=utf-8");
+    res.set("Cache-Control", "public, max-age=3600");
+    res.set("X-Cache", "HIT");
+    res.send(cached);
+    return;
+  }
+
+  try {
+    // Fetch original sitemap-index.xml
+    const indexRes = await axios({
+      method: "GET",
+      url: `${SOURCE_ORIGIN}/sitemap-index.xml`,
+      headers: { host: SOURCE_DOMAIN, "user-agent": "Mozilla/5.0 (compatible; MirrorBot/1.0)", "accept-encoding": "gzip, deflate, br" },
+      responseType: "arraybuffer",
+      timeout: 30000,
+      validateStatus: () => true,
+    });
+
+    const indexEncoding = (indexRes.headers["content-encoding"] || "").toLowerCase();
+    let indexRaw;
+    try { indexRaw = await decompressBody(indexRes.data, indexEncoding || null); } catch { indexRaw = indexRes.data; }
+    let indexContent = indexRaw.toString("utf-8");
+
+    // Rewrite source URLs to mirror
+    indexContent = indexContent.replace(
+      new RegExp(`(https?:)?//${ESCAPED_SOURCE}`, "gi"),
+      mirrorOrigin
+    );
+
+    // Fix nested indexing: replace sitemap-articles-en.xml entry with its children
+    const nestedPattern = /<sitemap>\s*<loc>[^<]*sitemap-articles-en\.xml<\/loc>[\s\S]*?<\/sitemap>/i;
+    if (nestedPattern.test(indexContent)) {
+      try {
+        const artRes = await axios({
+          method: "GET",
+          url: `${SOURCE_ORIGIN}/sitemap-articles-en.xml`,
+          headers: { host: SOURCE_DOMAIN, "user-agent": "Mozilla/5.0 (compatible; MirrorBot/1.0)", "accept-encoding": "gzip, deflate, br" },
+          responseType: "arraybuffer",
+          timeout: 30000,
+          validateStatus: () => true,
+        });
+
+        const artEncoding = (artRes.headers["content-encoding"] || "").toLowerCase();
+        let artRaw;
+        try { artRaw = await decompressBody(artRes.data, artEncoding || null); } catch { artRaw = artRes.data; }
+        let artContent = artRaw.toString("utf-8");
+
+        // Rewrite URLs in nested sitemap
+        artContent = artContent.replace(
+          new RegExp(`(https?:)?//${ESCAPED_SOURCE}`, "gi"),
+          mirrorOrigin
+        );
+
+        // Extract all <sitemap> entries from the nested index
+        const entries = [];
+        const entryRe = /<sitemap>[\s\S]*?<\/sitemap>/gi;
+        let m;
+        while ((m = entryRe.exec(artContent)) !== null) {
+          entries.push(m[0]);
+        }
+
+        if (entries.length > 0) {
+          indexContent = indexContent.replace(nestedPattern, entries.join("\n"));
+        }
+      } catch (e) {
+        console.error("[WARN] Failed to flatten sitemap-articles-en.xml:", e.message);
+      }
+    }
+
+    cache.set(cacheKey, indexContent);
+    res.set("Content-Type", "application/xml; charset=utf-8");
+    res.set("Cache-Control", "public, max-age=3600");
+    res.set("X-Cache", "MISS");
+    res.send(indexContent);
+  } catch (error) {
+    console.error("[ERROR] sitemap-index.xml:", error.message);
+    res.status(502).send("Failed to fetch sitemap");
+  }
+});
+
 app.get("/robots.txt", (req, res) => {
   const mirrorOrigin = getMirrorOrigin(req);
   const robotsTxt = `User-agent: *
@@ -645,7 +731,6 @@ Allow: /
 
 Sitemap: ${mirrorOrigin}/sitemap-index.xml
 Sitemap: ${mirrorOrigin}/sitemap-news-en.xml
-Sitemap: ${mirrorOrigin}/sitemap-articles-en.xml
 Sitemap: ${mirrorOrigin}/sitemap-video-episodes-en.xml
 Sitemap: ${mirrorOrigin}/sitemap-video-series.xml
 Sitemap: ${mirrorOrigin}/sitemap-pages.xml
