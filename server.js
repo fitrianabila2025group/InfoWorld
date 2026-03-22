@@ -454,6 +454,12 @@ function rewriteContent(body, mirrorOrigin, mirrorHost, contentType) {
       ""
     );
 
+    // Remove announcement bar
+    content = content.replace(
+      /<div\s+class="section-block--announcementbar[\s\S]*?<\/div>/gi,
+      ""
+    );
+
     // Step 4: Convert SEMUA remaining source URLs ke relative paths
     // Ini yang mencegah error ERR_NAME_NOT_RESOLVED
     // https://www.infoworld.com/path → /path
