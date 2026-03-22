@@ -480,8 +480,24 @@ function rewriteContent(body, mirrorOrigin, mirrorHost, contentType) {
     // Step 5: Apply custom UI theme — remove ads/tracking, inject CSS/JS/header/footer
     content = transformHtmlUi(content);
 
+  } else if (contentType && (contentType.includes("text/xml") || contentType.includes("application/xml") || contentType.includes("application/rss+xml") || contentType.includes("application/atom+xml"))) {
+    // === XML CONTENT (Sitemaps, RSS, Atom) ===
+    // Sitemaps HARUS pakai absolute URLs (standar sitemap protocol)
+    // Rewrite semua source URLs ke absolute mirror URLs
+    content = content.replace(
+      new RegExp(`(https?:)?//${ESCAPED_SOURCE}(/[^"'<>\\s)\\\\]*)`, "gi"),
+      (match, proto, path) => mirrorOrigin + path
+    );
+    content = content.replace(
+      new RegExp(`(https?:)?//${ESCAPED_SOURCE}(?=["'<>\\s])`, "gi"),
+      mirrorOrigin
+    );
+    content = content.replace(
+      new RegExp(`(https?:)?//${ESCAPED_SOURCE}$`, "gm"),
+      mirrorOrigin
+    );
   } else {
-    // === CSS, JS, JSON, XML, dll ===
+    // === CSS, JS, JSON, dll ===
     // Convert semua source URLs ke relative paths
     content = content.replace(
       new RegExp(`(https?:)?//${ESCAPED_SOURCE}(/[^"'<>\\s)\\\\]*)`, "gi"),
@@ -614,7 +630,15 @@ app.get("/robots.txt", (req, res) => {
   const robotsTxt = `User-agent: *
 Allow: /
 
-Sitemap: ${mirrorOrigin}/sitemap.xml
+Sitemap: ${mirrorOrigin}/sitemap-index.xml
+Sitemap: ${mirrorOrigin}/sitemap-news-en.xml
+Sitemap: ${mirrorOrigin}/sitemap-articles-en.xml
+Sitemap: ${mirrorOrigin}/sitemap-video-episodes-en.xml
+Sitemap: ${mirrorOrigin}/sitemap-video-series.xml
+Sitemap: ${mirrorOrigin}/sitemap-pages.xml
+Sitemap: ${mirrorOrigin}/sitemap-blog-series.xml
+Sitemap: ${mirrorOrigin}/sitemap-profiles.xml
+Sitemap: ${mirrorOrigin}/sitemap-brandposts.xml
 `;
   res.set("Content-Type", "text/plain; charset=utf-8");
   res.set("Cache-Control", "public, max-age=3600");
