@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const zlib = require("zlib");
+const path = require("path");
 const { URL } = require("url");
 const NodeCache = require("node-cache");
 
@@ -334,8 +335,12 @@ function transformHtmlUi(content) {
 
   // Keep original title and og:site_name as-is (InfoWorld)
 
-  // Inject custom CSS before </head>
-  content = content.replace(/<\/head>/i, getCustomCss() + "\n</head>");
+  // Replace favicon
+  content = content.replace(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*>/gi, "");
+
+  // Inject custom CSS and favicon before </head>
+  const faviconTag = '<link rel="icon" type="image/png" href="/favicon.png">';
+  content = content.replace(/<\/head>/i, faviconTag + "\n" + getCustomCss() + "\n</head>");
 
   // Inject custom header after <body...>
   content = content.replace(/(<body[^>]*>)/i, "$1\n" + getCustomHeaderHtml());
@@ -624,6 +629,14 @@ function buildOriginHeaders(req) {
 // ============================================================
 // CUSTOM ROUTES
 // ============================================================
+
+app.get("/favicon.ico", (req, res) => {
+  res.sendFile(path.join(__dirname, "favicon.png"), { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" } });
+});
+
+app.get("/favicon.png", (req, res) => {
+  res.sendFile(path.join(__dirname, "favicon.png"), { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" } });
+});
 
 app.get("/robots.txt", (req, res) => {
   const mirrorOrigin = getMirrorOrigin(req);
